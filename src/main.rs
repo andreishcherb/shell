@@ -13,11 +13,13 @@ fn main() {
             .read_line(&mut command)
             .expect("Failed to read line");
 
-        if command.trim() == "exit" {
-            std::process::exit(0);
-        } 
-        else {
-            println!("{}: command not found", command.trim());
+        for cmd in command.trim().split(' ') { 
+            if cmd == "exit" {
+                std::process::exit(0);
+            } 
+            else {
+                println!("{}: command not found", cmd);
+            }
         }
 
     }

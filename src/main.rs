@@ -13,6 +13,7 @@ fn main() {
             .read_line(&mut command)
             .expect("Failed to read line");
 
-        println!("{}: command not found", command.trim())
+        println!("{}: command not found", command.trim());
+        std::process::exit(0);
     }
 }

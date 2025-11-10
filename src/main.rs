@@ -26,8 +26,6 @@ impl FromStr for Command {
 }
 
 use std::fmt;
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
 
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -71,7 +69,7 @@ fn main() {
                         let cmd = input[1].parse::<Command>();
                         match cmd {
                             Ok(cmd) => println!("{} is a shell builtin", cmd),
-                            Err(_) => search_executable_file(input[1]),
+                            Err(_) => search_executable_file(input[1], "PATH"),
                         }
                     }
                 }
@@ -81,26 +79,34 @@ fn main() {
     }
 }
 
-fn search_executable_file(filename: &str) {
-    let path = env!("PATH");
-    let dirs: Vec<&str> = path.split(':').collect();
-    for dir in dirs {
-        if let Ok(entries) = fs::read_dir(dir) {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    if let Ok(file_type) = entry.file_type() {
-                        if file_type.is_file() && entry.file_name() == filename {
-                            if let Ok(metadata) = entry.metadata() {
-                                if metadata.permissions().mode() & 0o111 != 0 {
-                                    println!("{} is {}", filename, entry.path().display());
-                                    return
+use std::env;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
+
+fn search_executable_file(filename: &str, key: &str) {
+    match env::var(key) {
+        Ok(path) => {
+            let dirs: Vec<&str> = path.split(':').collect();
+            for dir in dirs {
+                if let Ok(entries) = fs::read_dir(dir) {
+                    for entry in entries {
+                        if let Ok(entry) = entry {
+                            if let Ok(file_type) = entry.file_type() {
+                                if file_type.is_file() && entry.file_name() == filename {
+                                    if let Ok(metadata) = entry.metadata() {
+                                        if metadata.permissions().mode() & 0o100 != 0 {
+                                            println!("{} is {}", filename, entry.path().display());
+                                            return;
+                                        }
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+            println!("{}: not found", filename);
         }
+        Err(e) => println!("env var: {key} not found: {e}"),
     }
-    println!("{}: not found", filename);
 }

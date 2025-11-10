@@ -90,8 +90,9 @@ fn search_executable_file(filename: &str) {
                 if let Ok(entry) = entry {
                     if let Ok(file_type) = entry.file_type() {
                         if file_type.is_file() && entry.file_name() == filename {
+                            println!("filename: {}", filename);
                             if let Ok(metadata) = entry.metadata() {
-                                if metadata.permissions().mode() & 0o100 != 0 {
+                                if metadata.permissions().mode() & 0o111 != 0 {
                                     println!("{} is {}", filename, entry.path().display());
                                     return
                                 }

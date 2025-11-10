@@ -70,7 +70,7 @@ fn main() {
                         let cmd = input[1].parse::<Command>();
                         match cmd {
                             Ok(cmd) => println!("{} is a shell builtin", cmd),
-                            Err(_) => println!("{}: command not found", input[1]),
+                            Err(_) => println!("{}: not found", input[1]),
                         }
                     }
                 }

@@ -79,7 +79,7 @@ fn main() -> std::io::Result<()> {
             },
             Err(_) => match search_executable_file(input[0], "PATH") {
                 Some(path) => {
-                    let mut cmd = std::process::Command::new(path);
+                    let mut cmd = std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
                     let mut index = 1;
                     while index < input.len() {
                         cmd.arg(input[index]);

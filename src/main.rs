@@ -6,6 +6,7 @@ use std::str::FromStr;
 enum Command {
     Exit,
     Echo,
+    Type,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -18,7 +19,20 @@ impl FromStr for Command {
         match s {
             "exit" => Ok(Self::Exit),
             "echo" => Ok(Self::Echo),
+            "type" => Ok(Self::Type),
             _ => Err(ParseCommandError),
+        }
+    }
+}
+
+use std::fmt;
+
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Command::Exit => write!(f, "exit"),
+            Command::Echo => write!(f, "echo"),
+            Command::Type => write!(f, "type"),
         }
     }
 }
@@ -50,6 +64,15 @@ fn main() {
                         index += 1;
                     }
                     println!()
+                }
+                Command::Type => {
+                    if input.len() > 1 {
+                        let cmd = input[1].parse::<Command>();
+                        match cmd {
+                            Ok(cmd) => println!("{} is a shell builtin", cmd),
+                            Err(_) => println!("{}: command not found", input[1]),
+                        }
+                    }
                 }
             },
             Err(_) => println!("{}: command not found", input[0]),

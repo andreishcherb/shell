@@ -37,8 +37,8 @@ impl fmt::Display for Command {
     }
 }
 
-fn main() {
-    loop {
+fn main() -> std::io::Result<()> {  
+        loop {
         print!("$ ");
         io::stdout().flush().unwrap();
 
@@ -69,12 +69,28 @@ fn main() {
                         let cmd = input[1].parse::<Command>();
                         match cmd {
                             Ok(cmd) => println!("{} is a shell builtin", cmd),
-                            Err(_) => search_executable_file(input[1], "PATH"),
+                            Err(_) => match search_executable_file(input[1], "PATH") {
+                                Some(path) => println!("{} is {}", input[1], path.display()),
+                                None => println!("{}: not found", input[1]),
+                            },
                         }
                     }
                 }
             },
-            Err(_) => println!("{}: not found", input[0]),
+            Err(_) => match search_executable_file(input[0], "PATH") {
+                Some(path) => {
+                    let mut cmd = std::process::Command::new(path);
+                    let mut index = 1;
+                    while index < input.len() {
+                        cmd.arg(input[index]);
+                        index += 1;
+                    }
+                    let output = cmd.output().expect("Failed to execute command");
+                    io::stdout().write_all(&output.stdout)?;
+                    io::stderr().write_all(&output.stderr)?;
+                }
+                None => println!("{}: not found", input[0]),
+            },
         }
     }
 }
@@ -82,11 +98,12 @@ fn main() {
 use std::env;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::path::PathBuf;
 
-fn search_executable_file(filename: &str, key: &str) {
+fn search_executable_file(filename: &str, key: &str) -> Option<PathBuf> {
     match env::var(key) {
-        Ok(path) => {
-            let dirs: Vec<&str> = path.split(':').collect();
+        Ok(val) => {
+            let dirs: Vec<&str> = val.split(':').collect();
             for dir in dirs {
                 if let Ok(entries) = fs::read_dir(dir) {
                     for entry in entries {
@@ -95,8 +112,7 @@ fn search_executable_file(filename: &str, key: &str) {
                                 if file_type.is_file() && entry.file_name() == filename {
                                     if let Ok(metadata) = entry.metadata() {
                                         if metadata.permissions().mode() & 0o100 != 0 {
-                                            println!("{} is {}", filename, entry.path().display());
-                                            return;
+                                            return Some(entry.path());
                                         }
                                     }
                                 }
@@ -105,8 +121,11 @@ fn search_executable_file(filename: &str, key: &str) {
                     }
                 }
             }
-            println!("{}: not found", filename);
+            None
         }
-        Err(e) => println!("env var: {key} not found: {e}"),
+        Err(e) => {
+            println!("env var: {key} not found: {e}");
+            None
+        }
     }
 }

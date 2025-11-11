@@ -22,9 +22,9 @@ impl FromStr for Command {
             "exit" => Ok(Self::Exit),
             "echo" => Ok(Self::Echo),
             "type" => Ok(Self::Type),
-            "pwd"  => Ok(Self::Pwd),
-            "cd"   => Ok(Self::Cd),
-            
+            "pwd" => Ok(Self::Pwd),
+            "cd" => Ok(Self::Cd),
+
             _ => Err(ParseCommandError),
         }
     }
@@ -38,8 +38,8 @@ impl fmt::Display for Command {
             Command::Exit => write!(f, "exit"),
             Command::Echo => write!(f, "echo"),
             Command::Type => write!(f, "type"),
-            Command::Pwd  => write!(f, "pwd"),
-            Command::Cd   => write!(f, "cd"),
+            Command::Pwd => write!(f, "pwd"),
+            Command::Cd => write!(f, "cd"),
         }
     }
 }
@@ -73,17 +73,23 @@ fn main() -> std::io::Result<()> {
                     }
                     println!()
                 }
-                Command::Pwd => println!("{}",env::current_dir()?.display()),
+                Command::Pwd => println!("{}", env::current_dir()?.display()),
                 Command::Cd => {
                     if input.len() > 1 {
                         let root: &Path;
+                        let path: String;
 
                         if input[1] == "~" {
-                            root = Path::new(env!("HOME"));
+                            if let Ok(val) = env::var("HOME") {
+                                path = val;
+                            } else {
+                                path = env!("HOME").to_string();
+                            }
                         } else {
-                            root = Path::new(input[1]);
+                            path = String::from(input[1]);
                         }
-                        if let Err(_) = env::set_current_dir(root) {
+                        root = Path::new(&path);
+                        if let Err(_) = env::set_current_dir(&root) {
                             println!("cd: {}: No such file or directory", input[1])
                         }
                     }
@@ -103,7 +109,8 @@ fn main() -> std::io::Result<()> {
             },
             Err(_) => match search_executable_file(input[0], "PATH") {
                 Some(path) => {
-                    let mut cmd = std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
+                    let mut cmd =
+                        std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
                     let mut index = 1;
                     while index < input.len() {
                         cmd.arg(input[index]);

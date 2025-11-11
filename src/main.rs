@@ -76,8 +76,14 @@ fn main() -> std::io::Result<()> {
                 Command::Pwd => println!("{}",env::current_dir()?.display()),
                 Command::Cd => {
                     if input.len() > 1 {
-                        let root = Path::new(input[1]);
-                        if let Err(_) = env::set_current_dir(&root) {
+                        let root: &Path;
+
+                        if input[1] == "~" {
+                            root = Path::new(env!("HOME"));
+                        } else {
+                            root = Path::new(input[1]);
+                        }
+                        if let Err(_) = env::set_current_dir(root) {
                             println!("cd: {}: No such file or directory", input[1])
                         }
                     }

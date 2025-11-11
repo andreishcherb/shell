@@ -7,6 +7,7 @@ enum Command {
     Exit,
     Echo,
     Type,
+    Pwd,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -20,6 +21,7 @@ impl FromStr for Command {
             "exit" => Ok(Self::Exit),
             "echo" => Ok(Self::Echo),
             "type" => Ok(Self::Type),
+            "pwd"  => Ok(Self::Pwd),
             _ => Err(ParseCommandError),
         }
     }
@@ -33,14 +35,15 @@ impl fmt::Display for Command {
             Command::Exit => write!(f, "exit"),
             Command::Echo => write!(f, "echo"),
             Command::Type => write!(f, "type"),
+            Command::Pwd  => write!(f, "pwd"),
         }
     }
 }
 
-fn main() -> std::io::Result<()> {  
-        loop {
+fn main() -> std::io::Result<()> {
+    loop {
         print!("$ ");
-        io::stdout().flush().unwrap();
+        io::stdout().flush()?;
 
         let mut input = String::new();
 
@@ -64,6 +67,7 @@ fn main() -> std::io::Result<()> {
                     }
                     println!()
                 }
+                Command::Pwd => println!("{}",env::current_dir()?.display()),
                 Command::Type => {
                     if input.len() > 1 {
                         let cmd = input[1].parse::<Command>();
@@ -85,7 +89,7 @@ fn main() -> std::io::Result<()> {
                         cmd.arg(input[index]);
                         index += 1;
                     }
-                    let output = cmd.output().expect("Failed to execute command");
+                    let output = cmd.output()?;
                     io::stdout().write_all(&output.stdout)?;
                     io::stderr().write_all(&output.stderr)?;
                 }

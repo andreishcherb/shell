@@ -8,6 +8,7 @@ enum Command {
     Echo,
     Type,
     Pwd,
+    Cd,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -22,6 +23,8 @@ impl FromStr for Command {
             "echo" => Ok(Self::Echo),
             "type" => Ok(Self::Type),
             "pwd"  => Ok(Self::Pwd),
+            "cd"   => Ok(Self::Cd),
+            
             _ => Err(ParseCommandError),
         }
     }
@@ -36,9 +39,12 @@ impl fmt::Display for Command {
             Command::Echo => write!(f, "echo"),
             Command::Type => write!(f, "type"),
             Command::Pwd  => write!(f, "pwd"),
+            Command::Cd   => write!(f, "cd"),
         }
     }
 }
+
+use std::path::Path;
 
 fn main() -> std::io::Result<()> {
     loop {
@@ -68,6 +74,14 @@ fn main() -> std::io::Result<()> {
                     println!()
                 }
                 Command::Pwd => println!("{}",env::current_dir()?.display()),
+                Command::Cd => {
+                    if input.len() > 1 {
+                        let root = Path::new(input[1]);
+                        if let Err(_) = env::set_current_dir(&root) {
+                            println!("cd: {}: No such file or directory", input[1])
+                        }
+                    }
+                }
                 Command::Type => {
                     if input.len() > 1 {
                         let cmd = input[1].parse::<Command>();
@@ -84,7 +98,7 @@ fn main() -> std::io::Result<()> {
             Err(_) => match search_executable_file(input[0], "PATH") {
                 Some(path) => {
                     let mut cmd = std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
-                    let mut index = 1;
+                    let mut index = 2;
                     while index < input.len() {
                         cmd.arg(input[index]);
                         index += 1;

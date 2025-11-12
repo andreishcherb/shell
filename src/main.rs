@@ -64,7 +64,7 @@ fn main() -> std::io::Result<()> {
             continue;
         }
 
-        let re = Regex::new(r"('[^']*'|[/\.\-\w]+)").unwrap();
+        let re = Regex::new(r"('[^']*'|[~/\.\-\w]+)").unwrap();
         let mut args = vec![];
         for (_, [arg]) in re.captures_iter(&input).map(|c| c.extract()) {
             let arg = arg.trim_matches('\'');

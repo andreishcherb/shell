@@ -45,6 +45,7 @@ impl fmt::Display for Command {
 }
 
 use std::path::Path;
+use regex::Regex;
 
 fn main() -> std::io::Result<()> {
     loop {
@@ -57,16 +58,28 @@ fn main() -> std::io::Result<()> {
             .read_line(&mut input)
             .expect("Failed to read line");
 
-        let input: Vec<&str> = input.trim().split(' ').collect();
-        let cmd = input[0].parse::<Command>();
+        let input = input.trim().replace("''", "");
+
+        if input.is_empty()  {
+            continue;
+        }
+
+        let re = Regex::new(r"('[^']*'|[\.\-\w]+)").unwrap();
+        let mut args = vec![];
+        for (_, [arg]) in re.captures_iter(&input).map(|c| c.extract()) {
+            let arg = arg.trim_matches('\'');
+            args.push(arg);
+        }
+
+        let cmd = args[0].parse::<Command>();
         match cmd {
             Ok(cmd) => match cmd {
                 Command::Exit => std::process::exit(0),
                 Command::Echo => {
                     let mut index = 1;
-                    while index < input.len() {
-                        print!("{}", input[index]);
-                        if index != input.len() - 1 {
+                    while index < args.len() {
+                        print!("{}", args[index]);
+                        if index != args.len() - 1 {
                             print!(" ")
                         }
                         index += 1;
@@ -75,52 +88,52 @@ fn main() -> std::io::Result<()> {
                 }
                 Command::Pwd => println!("{}", env::current_dir()?.display()),
                 Command::Cd => {
-                    if input.len() > 1 {
+                    if args.len() > 1 {
                         let root: &Path;
                         let path: String;
 
-                        if input[1] == "~" {
+                        if args[1] == "~" {
                             if let Ok(val) = env::var("HOME") {
                                 path = val;
                             } else {
                                 path = env!("HOME").to_string();
                             }
                         } else {
-                            path = String::from(input[1]);
+                            path = String::from(args[1]);
                         }
                         root = Path::new(&path);
                         if let Err(_) = env::set_current_dir(&root) {
-                            println!("cd: {}: No such file or directory", input[1])
+                            println!("cd: {}: No such file or directory", args[1])
                         }
                     }
                 }
                 Command::Type => {
-                    if input.len() > 1 {
-                        let cmd = input[1].parse::<Command>();
+                    if args.len() > 1 {
+                        let cmd = args[1].parse::<Command>();
                         match cmd {
                             Ok(cmd) => println!("{} is a shell builtin", cmd),
-                            Err(_) => match search_executable_file(input[1], "PATH") {
-                                Some(path) => println!("{} is {}", input[1], path.display()),
-                                None => println!("{}: not found", input[1]),
+                            Err(_) => match search_executable_file(args[1], "PATH") {
+                                Some(path) => println!("{} is {}", args[1], path.display()),
+                                None => println!("{}: not found", args[1]),
                             },
                         }
                     }
                 }
             },
-            Err(_) => match search_executable_file(input[0], "PATH") {
+            Err(_) => match search_executable_file(args[0], "PATH") {
                 Some(path) => {
                     let mut cmd =
                         std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
                     let mut index = 1;
-                    while index < input.len() {
-                        cmd.arg(input[index]);
+                    while index < args.len() {
+                        cmd.arg(args[index]);
                         index += 1;
                     }
                     let output = cmd.output()?;
                     io::stdout().write_all(&output.stdout)?;
                     io::stderr().write_all(&output.stderr)?;
                 }
-                None => println!("{}: not found", input[0]),
+                None => println!("{}: not found", args[0]),
             },
         }
     }

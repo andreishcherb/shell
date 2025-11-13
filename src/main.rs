@@ -58,7 +58,7 @@ fn main() -> std::io::Result<()> {
             .read_line(&mut input)
             .expect("Failed to read line");
 
-        let input = input.trim().replace("''", "");
+        let input = input.trim().replace("''", "").replace("\"\"", "");
 
         if input.is_empty()  {
             continue;

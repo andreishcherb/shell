@@ -44,8 +44,8 @@ impl fmt::Display for Command {
     }
 }
 
-use std::path::Path;
 use regex::Regex;
+use std::fs::File;
 
 fn main() -> std::io::Result<()> {
     loop {
@@ -59,12 +59,11 @@ fn main() -> std::io::Result<()> {
             .expect("Failed to read line");
 
         let input = input.trim().replace("''", "").replace("\"\"", "");
-
-        if input.is_empty()  {
+        if input.is_empty() {
             continue;
         }
 
-        let re = Regex::new(r#"("[/'\w\s]*"|'[^']*'|[~/\.\-\w]+)"#).unwrap();
+        let re = Regex::new(r#"("[/'\w\s\\]+"|'[^']+'|[~/\.\-\w\\\d>]+)"#).unwrap();
         let mut args = vec![];
         for (_, [arg]) in re.captures_iter(&input).map(|c| c.extract()) {
             let x: &[_] = &['\'', '"'];
@@ -77,33 +76,45 @@ fn main() -> std::io::Result<()> {
             Ok(cmd) => match cmd {
                 Command::Exit => std::process::exit(0),
                 Command::Echo => {
-                    let mut index = 1;
-                    while index < args.len() {
-                        print!("{}", args[index]);
-                        if index != args.len() - 1 {
-                            print!(" ")
+                    let redirect_op = (">", "1>");
+                    if let Some(_) = args
+                        .iter()
+                        .find(|&&s| s == redirect_op.0 || s == redirect_op.1)
+                    {
+                        for (i, arg) in args.iter().enumerate() {
+                            if *arg == redirect_op.0 || *arg == redirect_op.1 && i != args.len() - 1 {
+                                let file_name = args[i + 1];
+                                let mut file = File::create(file_name)?;
+                                let mut index = 1;
+                                while index < i {
+                                    file.write_all(args[index].as_bytes())?;
+                                    file.write_all(b" ")?;
+                                    index += 1;
+                                }
+                                file.write_all(b"\n")?;
+                                break;
+                            } else if *arg == redirect_op.0 || *arg == redirect_op.1 && i == args.len() - 1 {
+                                println!("rash: missing file name");
+                            }
                         }
-                        index += 1;
+                    } else {
+                        let mut index = 1;
+                        while index < args.len() {
+                            print!("{}", args[index]);
+                            if index != args.len() - 1 {
+                                print!(" ")
+                            }
+                            index += 1;
+                        }
+                        println!()
                     }
-                    println!()
                 }
                 Command::Pwd => println!("{}", env::current_dir()?.display()),
                 Command::Cd => {
                     if args.len() > 1 {
-                        let root: &Path;
-                        let path: String;
-
-                        if args[1] == "~" {
-                            if let Ok(val) = env::var("HOME") {
-                                path = val;
-                            } else {
-                                path = env!("HOME").to_string();
-                            }
-                        } else {
-                            path = String::from(args[1]);
-                        }
-                        root = Path::new(&path);
-                        if let Err(_) = env::set_current_dir(&root) {
+                        let parsed_directory =
+                            args[1].replace("~", &std::env::var("HOME").unwrap());
+                        if let Err(_) = env::set_current_dir(parsed_directory) {
                             println!("cd: {}: No such file or directory", args[1])
                         }
                     }

@@ -160,7 +160,7 @@ fn main() -> std::io::Result<()> {
                                 }
                                 let output = cmd.output()?;
                                 file.write_all(&output.stdout)?;
-                                file.write_all(&output.stderr)?;
+                                io::stderr().write_all(&output.stderr)?;
                                 break;
                             } else if *arg == redirect_op.0
                                 || *arg == redirect_op.1 && i == args.len() - 1

@@ -77,32 +77,27 @@ fn main() -> std::io::Result<()> {
         match cmd {
             Ok(cmd) => match cmd {
                 Command::Exit => std::process::exit(0),
-                Command::Echo => {
-                    let redirect_op = (">", "1>");
-                    if let Some(_) = args
-                        .iter()
-                        .find(|&&s| s == redirect_op.0 || s == redirect_op.1)
-                    {
-                        for (i, arg) in args.iter().enumerate() {
-                            if *arg == redirect_op.0 || *arg == redirect_op.1 && i != args.len() - 1
-                            {
-                                let file_name = args[i + 1];
-                                let mut file = File::create(file_name)?;
-                                let mut index = 1;
-                                while index < i {
-                                    file.write_all(args[index].as_bytes())?;
-                                    file.write_all(b" ")?;
-                                    index += 1;
-                                }
-                                file.write_all(b"\n")?;
-                                break;
-                            } else if *arg == redirect_op.0
-                                || *arg == redirect_op.1 && i == args.len() - 1
-                            {
-                                println!("rash: missing file name");
+                Command::Echo => match redirection(args.clone()) {
+                    Some((file_name, i, err_redir)) => {
+                        let mut file = File::create(file_name)?;
+                        let mut index = 1;
+                        while index < i {
+                            if !err_redir {
+                                file.write_all(args[index].as_bytes())?;
+                                file.write_all(b" ")?;
+                            } else {
+                                io::stdout().write_all(args[index].as_bytes())?;
+                                io::stdout().write_all(b" ")?;
                             }
+                            index += 1;
                         }
-                    } else {
+                        if !err_redir {
+                            file.write_all(b"\n")?;
+                        } else {
+                            io::stdout().write_all(b"\n")?;
+                        }
+                    }
+                    None => {
                         let mut index = 1;
                         while index < args.len() {
                             print!("{}", args[index]);
@@ -113,7 +108,7 @@ fn main() -> std::io::Result<()> {
                         }
                         println!()
                     }
-                }
+                },
                 Command::Pwd => println!("{}", env::current_dir()?.display()),
                 Command::Cd => {
                     if args.len() > 1 {
@@ -138,37 +133,27 @@ fn main() -> std::io::Result<()> {
                 }
             },
             Err(_) => match search_executable_file(args[0], "PATH") {
-                Some(path) => {
-                    let redirect_op = (">", "1>");
-                    if let Some(_) = args
-                        .iter()
-                        .find(|&&s| s == redirect_op.0 || s == redirect_op.1)
-                    {
-                        for (i, arg) in args.iter().enumerate() {
-                            if (*arg == redirect_op.0 || *arg == redirect_op.1)
-                                && i != args.len() - 1
-                            {
-                                let mut cmd = std::process::Command::new(
-                                    path.file_name().unwrap_or(path.as_os_str()),
-                                );
-                                let file_name = args[i + 1];
-                                let mut file = File::create(file_name)?;
-                                let mut index = 1;
-                                while index < i {
-                                    cmd.arg(args[index]);
-                                    index += 1;
-                                }
-                                let output = cmd.output()?;
-                                file.write_all(&output.stdout)?;
-                                io::stderr().write_all(&output.stderr)?;
-                                break;
-                            } else if *arg == redirect_op.0
-                                || *arg == redirect_op.1 && i == args.len() - 1
-                            {
-                                println!("rash: missing file name");
-                            }
+                Some(path) => match redirection(args.clone()) {
+                    Some((file_name, i, err_redir)) => {
+                        let mut cmd = std::process::Command::new(
+                            path.file_name().unwrap_or(path.as_os_str()),
+                        );
+                        let mut file = File::create(file_name)?;
+                        let mut index = 1;
+                        while index < i {
+                            cmd.arg(args[index]);
+                            index += 1;
                         }
-                    } else {
+                        let output = cmd.output()?;
+                        if !err_redir {
+                            file.write_all(&output.stdout)?;
+                            io::stderr().write_all(&output.stderr)?;
+                        } else {
+                            io::stdout().write_all(&output.stdout)?;
+                            file.write_all(&output.stderr)?;
+                        }
+                    }
+                    None => {
                         let mut cmd = std::process::Command::new(
                             path.file_name().unwrap_or(path.as_os_str()),
                         );
@@ -181,7 +166,7 @@ fn main() -> std::io::Result<()> {
                         io::stdout().write_all(&output.stdout)?;
                         io::stderr().write_all(&output.stderr)?;
                     }
-                }
+                },
                 None => println!("{}: not found", args[0]),
             },
         }
@@ -220,5 +205,29 @@ fn search_executable_file(filename: &str, key: &str) -> Option<PathBuf> {
             println!("env var: {key} not found: {e}");
             None
         }
+    }
+}
+
+fn redirection(args: Vec<&str>) -> Option<(&str, usize, bool)> {
+    let redirect_op = (">", "1>", "2>");
+    if let Some(_) = args
+        .iter()
+        .find(|&&s| s == redirect_op.0 || s == redirect_op.1 || s == redirect_op.2)
+    {
+        for (i, arg) in args.iter().enumerate() {
+            if (*arg == redirect_op.0 || *arg == redirect_op.1 || *arg == redirect_op.2) && i != args.len() - 1 {
+                let file_name = args[i + 1];
+                if *arg == redirect_op.2 {
+                    return Some((file_name, i, true));
+                } else {
+                    return Some((file_name, i, false));
+                }
+            } else if (*arg == redirect_op.0 || *arg == redirect_op.1 || *arg == redirect_op.2) && i == args.len() - 1 {
+                println!("rash: missing file name");
+            }
+        }
+        None
+    } else {
+        None
     }
 }

@@ -71,6 +71,8 @@ fn main() -> std::io::Result<()> {
             args.push(arg);
         }
 
+        // println!("args:{:?}", args);
+
         let cmd = args[0].parse::<Command>();
         match cmd {
             Ok(cmd) => match cmd {
@@ -82,7 +84,8 @@ fn main() -> std::io::Result<()> {
                         .find(|&&s| s == redirect_op.0 || s == redirect_op.1)
                     {
                         for (i, arg) in args.iter().enumerate() {
-                            if *arg == redirect_op.0 || *arg == redirect_op.1 && i != args.len() - 1 {
+                            if *arg == redirect_op.0 || *arg == redirect_op.1 && i != args.len() - 1
+                            {
                                 let file_name = args[i + 1];
                                 let mut file = File::create(file_name)?;
                                 let mut index = 1;
@@ -93,7 +96,9 @@ fn main() -> std::io::Result<()> {
                                 }
                                 file.write_all(b"\n")?;
                                 break;
-                            } else if *arg == redirect_op.0 || *arg == redirect_op.1 && i == args.len() - 1 {
+                            } else if *arg == redirect_op.0
+                                || *arg == redirect_op.1 && i == args.len() - 1
+                            {
                                 println!("rash: missing file name");
                             }
                         }
@@ -134,16 +139,48 @@ fn main() -> std::io::Result<()> {
             },
             Err(_) => match search_executable_file(args[0], "PATH") {
                 Some(path) => {
-                    let mut cmd =
-                        std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
-                    let mut index = 1;
-                    while index < args.len() {
-                        cmd.arg(args[index]);
-                        index += 1;
+                    let redirect_op = (">", "1>");
+                    if let Some(_) = args
+                        .iter()
+                        .find(|&&s| s == redirect_op.0 || s == redirect_op.1)
+                    {
+                        for (i, arg) in args.iter().enumerate() {
+                            if (*arg == redirect_op.0 || *arg == redirect_op.1)
+                                && i != args.len() - 1
+                            {
+                                let mut cmd = std::process::Command::new(
+                                    path.file_name().unwrap_or(path.as_os_str()),
+                                );
+                                let file_name = args[i + 1];
+                                let mut file = File::create(file_name)?;
+                                let mut index = 1;
+                                while index < i {
+                                    cmd.arg(args[index]);
+                                    index += 1;
+                                }
+                                let output = cmd.output()?;
+                                file.write_all(&output.stdout)?;
+                                file.write_all(&output.stderr)?;
+                                break;
+                            } else if *arg == redirect_op.0
+                                || *arg == redirect_op.1 && i == args.len() - 1
+                            {
+                                println!("rash: missing file name");
+                            }
+                        }
+                    } else {
+                        let mut cmd = std::process::Command::new(
+                            path.file_name().unwrap_or(path.as_os_str()),
+                        );
+                        let mut index = 1;
+                        while index < args.len() {
+                            cmd.arg(args[index]);
+                            index += 1;
+                        }
+                        let output = cmd.output()?;
+                        io::stdout().write_all(&output.stdout)?;
+                        io::stderr().write_all(&output.stderr)?;
                     }
-                    let output = cmd.output()?;
-                    io::stdout().write_all(&output.stdout)?;
-                    io::stderr().write_all(&output.stderr)?;
                 }
                 None => println!("{}: not found", args[0]),
             },

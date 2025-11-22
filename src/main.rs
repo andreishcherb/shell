@@ -11,6 +11,32 @@ enum Command {
     Cd,
 }
 
+#[derive(Debug, PartialEq)]
+enum Redirect {
+    OutputRedir,
+    ErrRedir,
+    OutputAppend,
+    ErrAppend,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ParseRedirectError;
+
+impl FromStr for Redirect {
+    type Err = ParseRedirectError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            ">" | "1>" => Ok(Self::OutputRedir),
+            "2>" => Ok(Self::ErrRedir),
+            ">>" | "1>>" => Ok(Self::OutputAppend),
+            "2>>" => Ok(Self::ErrAppend),
+
+            _ => Err(ParseRedirectError),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct ParseCommandError;
 
@@ -46,6 +72,7 @@ impl fmt::Display for Command {
 
 use regex::Regex;
 use std::fs::File;
+use std::fs::OpenOptions;
 
 fn main() -> std::io::Result<()> {
     loop {
@@ -72,103 +99,9 @@ fn main() -> std::io::Result<()> {
         }
 
         // println!("args:{:?}", args);
-
-        let cmd = args[0].parse::<Command>();
-        match cmd {
-            Ok(cmd) => match cmd {
-                Command::Exit => std::process::exit(0),
-                Command::Echo => match redirection(args.clone()) {
-                    Some((file_name, i, err_redir)) => {
-                        let mut file = File::create(file_name)?;
-                        let mut index = 1;
-                        while index < i {
-                            if !err_redir {
-                                file.write_all(args[index].as_bytes())?;
-                                file.write_all(b" ")?;
-                            } else {
-                                io::stdout().write_all(args[index].as_bytes())?;
-                                io::stdout().write_all(b" ")?;
-                            }
-                            index += 1;
-                        }
-                        if !err_redir {
-                            file.write_all(b"\n")?;
-                        } else {
-                            io::stdout().write_all(b"\n")?;
-                        }
-                    }
-                    None => {
-                        let mut index = 1;
-                        while index < args.len() {
-                            print!("{}", args[index]);
-                            if index != args.len() - 1 {
-                                print!(" ")
-                            }
-                            index += 1;
-                        }
-                        println!()
-                    }
-                },
-                Command::Pwd => println!("{}", env::current_dir()?.display()),
-                Command::Cd => {
-                    if args.len() > 1 {
-                        let parsed_directory =
-                            args[1].replace("~", &std::env::var("HOME").unwrap());
-                        if let Err(_) = env::set_current_dir(parsed_directory) {
-                            println!("cd: {}: No such file or directory", args[1])
-                        }
-                    }
-                }
-                Command::Type => {
-                    if args.len() > 1 {
-                        let cmd = args[1].parse::<Command>();
-                        match cmd {
-                            Ok(cmd) => println!("{} is a shell builtin", cmd),
-                            Err(_) => match search_executable_file(args[1], "PATH") {
-                                Some(path) => println!("{} is {}", args[1], path.display()),
-                                None => println!("{}: not found", args[1]),
-                            },
-                        }
-                    }
-                }
-            },
-            Err(_) => match search_executable_file(args[0], "PATH") {
-                Some(path) => match redirection(args.clone()) {
-                    Some((file_name, i, err_redir)) => {
-                        let mut cmd = std::process::Command::new(
-                            path.file_name().unwrap_or(path.as_os_str()),
-                        );
-                        let mut file = File::create(file_name)?;
-                        let mut index = 1;
-                        while index < i {
-                            cmd.arg(args[index]);
-                            index += 1;
-                        }
-                        let output = cmd.output()?;
-                        if !err_redir {
-                            file.write_all(&output.stdout)?;
-                            io::stderr().write_all(&output.stderr)?;
-                        } else {
-                            io::stdout().write_all(&output.stdout)?;
-                            file.write_all(&output.stderr)?;
-                        }
-                    }
-                    None => {
-                        let mut cmd = std::process::Command::new(
-                            path.file_name().unwrap_or(path.as_os_str()),
-                        );
-                        let mut index = 1;
-                        while index < args.len() {
-                            cmd.arg(args[index]);
-                            index += 1;
-                        }
-                        let output = cmd.output()?;
-                        io::stdout().write_all(&output.stdout)?;
-                        io::stderr().write_all(&output.stderr)?;
-                    }
-                },
-                None => println!("{}: not found", args[0]),
-            },
+        let redirection = redirection(args.clone());
+        if let Err(err) = handle_command(args, redirection) {
+            println!("here is error {}", err);
         }
     }
 }
@@ -208,26 +141,148 @@ fn search_executable_file(filename: &str, key: &str) -> Option<PathBuf> {
     }
 }
 
-fn redirection(args: Vec<&str>) -> Option<(&str, usize, bool)> {
-    let redirect_op = (">", "1>", "2>");
-    if let Some(_) = args
-        .iter()
-        .find(|&&s| s == redirect_op.0 || s == redirect_op.1 || s == redirect_op.2)
-    {
-        for (i, arg) in args.iter().enumerate() {
-            if (*arg == redirect_op.0 || *arg == redirect_op.1 || *arg == redirect_op.2) && i != args.len() - 1 {
-                let file_name = args[i + 1];
-                if *arg == redirect_op.2 {
-                    return Some((file_name, i, true));
-                } else {
-                    return Some((file_name, i, false));
-                }
-            } else if (*arg == redirect_op.0 || *arg == redirect_op.1 || *arg == redirect_op.2) && i == args.len() - 1 {
-                println!("rash: missing file name");
+fn redirection(args: Vec<&str>) -> Option<(Redirect, String, usize)> {
+    for (i, arg) in args.iter().enumerate() {
+        let redir = arg.parse::<Redirect>();
+        if let Ok(redir) = redir {
+            if i != args.len() - 1 {
+                return Some((redir, String::from(args[i + 1]), i));
+            } else {
+                println!("need filename");
             }
         }
-        None
-    } else {
-        None
     }
+
+    None
+}
+
+fn handle_command(
+    args: Vec<&str>,
+    redir: Option<(Redirect, String, usize)>,
+) -> Result<(), io::Error> {
+    let cmd = args[0].parse::<Command>();
+    match cmd {
+        Ok(cmd) => match cmd {
+            Command::Exit => std::process::exit(0),
+            Command::Echo => match redir {
+                Some((redir, file_name, i)) => {
+                    let mut file;
+                    match redir {
+                        Redirect::OutputRedir | Redirect::ErrRedir => {
+                            file = File::create(file_name)?
+                        }
+                        Redirect::OutputAppend | Redirect::ErrAppend => {
+                            file = OpenOptions::new()
+                                .append(true)
+                                .write(true)
+                                .create(true)
+                                .open(file_name)?
+                        }
+                    }
+                    let mut index = 1;
+
+                    while index < i {
+                        if let Redirect::OutputRedir | Redirect::OutputAppend = redir {
+                            file.write_all(args[index].as_bytes())?;
+                            file.write_all(b" ")?;
+                        } else {
+                            io::stdout().write_all(args[index].as_bytes())?;
+                            io::stdout().write_all(b" ")?;
+                        }
+                        index += 1;
+                    }
+                    if let Redirect::OutputRedir | Redirect::OutputAppend = redir {
+                        file.write_all(b"\n")?;
+                    } else {
+                        io::stdout().write_all(b"\n")?;
+                    }
+                }
+                None => {
+                    let mut index = 1;
+                    while index < args.len() {
+                        print!("{}", args[index]);
+                        if index != args.len() - 1 {
+                            print!(" ")
+                        }
+                        index += 1;
+                    }
+                    println!();
+                }
+            },
+            Command::Pwd => {
+                println!("{}", env::current_dir()?.display());
+            }
+            Command::Cd => {
+                if args.len() > 1 {
+                    let parsed_directory = args[1].replace("~", &std::env::var("HOME").unwrap());
+                    if let Err(_) = env::set_current_dir(parsed_directory) {
+                        println!("cd: {}: No such file or directory", args[1])
+                    }
+                }
+            }
+            Command::Type => {
+                if args.len() > 1 {
+                    for i in 1..args.len() {
+                        let cmd = args[i].parse::<Command>();
+                        match cmd {
+                            Ok(cmd) => println!("{} is a shell builtin", cmd),
+                            Err(_) => match search_executable_file(args[i], "PATH") {
+                                Some(path) => println!("{} is {}", args[i], path.display()),
+                                None => println!("{}: not found", args[i]),
+                            },
+                        }
+                    }
+                }
+            }
+        },
+        Err(_) => match search_executable_file(args[0], "PATH") {
+            Some(path) => match redir {
+                Some((redir, file_name, i)) => {
+                    let mut cmd =
+                        std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
+                    let mut file;
+                    match redir {
+                        Redirect::OutputRedir | Redirect::ErrRedir => {
+                            file = File::create(file_name)?
+                        }
+                        Redirect::OutputAppend | Redirect::ErrAppend => {
+                            file = OpenOptions::new()
+                                .append(true)
+                                .write(true)
+                                .create(true)
+                                .open(file_name)?
+                        }
+                    }
+                    let mut index = 1;
+                    while index < i {
+                        cmd.arg(args[index]);
+                        index += 1;
+                    }
+                    let output = cmd.output()?;
+                    if let Redirect::OutputRedir | Redirect::OutputAppend = redir {
+                        file.write_all(&output.stdout)?;
+                        io::stderr().write_all(&output.stderr)?;
+                    } else {
+                        io::stdout().write_all(&output.stdout)?;
+                        file.write_all(&output.stderr)?;
+                    }
+                }
+                None => {
+                    let mut cmd =
+                        std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
+                    let mut index = 1;
+                    while index < args.len() {
+                        cmd.arg(args[index]);
+                        index += 1;
+                    }
+                    let output = cmd.output()?;
+                    io::stdout().write_all(&output.stdout)?;
+                    io::stderr().write_all(&output.stderr)?;
+                }
+            },
+            None => println!("{}: not found", args[0]),
+        },
+    }
+
+    Ok(())
 }

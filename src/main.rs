@@ -72,13 +72,66 @@ impl fmt::Display for Command {
 
 use regex::Regex;
 use rustyline::error::ReadlineError;
-use rustyline::{DefaultEditor, Result};
+use rustyline::Result;
 use std::fs::File;
 use std::fs::OpenOptions;
+use rustyline::completion::{Completer, Pair};
+use rustyline::{Editor, Context};
+use rustyline::Helper;
+use rustyline::validate::Validator;
+use rustyline::highlight::Highlighter;
+use rustyline::hint::Hinter;
+use rustyline::history::DefaultHistory;
+
+
+struct MyHelper {
+    commands: Vec<String>,
+}
+
+impl Completer for MyHelper {
+    type Candidate = Pair;
+
+    fn complete(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> std::result::Result<(usize, Vec<Pair>), ReadlineError> {
+        // Find the start of the current word
+        let start = line[..pos].rfind(|c: char| c.is_whitespace() || c == '(' || c == ')').map_or(0, |i| i + 1);
+        let word = &line[start..pos];
+
+        // Filter commands that start with the current word
+        let candidates: Vec<Pair> = self.commands.iter()
+            .filter(|cmd| cmd.starts_with(word))
+            .map(|cmd| Pair {
+                display: cmd.clone(),
+                replacement: cmd.clone(),
+            })
+            .collect();
+
+        Ok((start, candidates))
+    }
+}
+
+impl Helper for MyHelper {}
+impl Hinter for MyHelper {
+
+    type Hint = String;
+
+    fn hint(&self, _line: &str, _pos: usize, _ctx: &rustyline::Context<'_>) -> Option<String> {
+        // Return Some("suggested text".to_string()) for actual hints, or None if you have no hints
+        None
+    }
+}
+impl Highlighter for MyHelper { fn highlight<'l>(&self, line: &'l str, _history_index: usize) -> std::borrow::Cow<'l, str> { std::borrow::Cow::Borrowed(line) } }
+impl Validator for MyHelper { fn validate(&self, _ctx: &mut rustyline::validate::ValidationContext) -> rustyline::Result<rustyline::validate::ValidationResult> { Ok(rustyline::validate::ValidationResult::Valid(None)) } }
 
 fn main() -> Result<()> {
     // `()` can be used when no completer is required
-    let mut rl = DefaultEditor::new()?;
+    let commands = vec!["echo ".to_string(), "exit ".to_string()];
+    let helper = MyHelper { commands };
+
+    // `Editor` can use any struct that implements the `Helper` trait.
+    // The type parameter <H: Helper> is set to `MyHelper`.
+    let mut rl: Editor<MyHelper, DefaultHistory> = Editor::new()?;
+    rl.set_helper(Some(helper));
+
     if rl.load_history("history.txt").is_err() {
         println!("No previous history.");
     }

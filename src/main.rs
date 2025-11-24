@@ -153,7 +153,7 @@ fn main() -> Result<()> {
                     args.push(arg);
                 }
 
-                println!("args:{:?}", args);
+                // println!("args:{:?}", args);
 
                 if let Err(err) = execution(&args) {
                     println!("Error: {:?}", err);

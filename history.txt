@@ -1,0 +1,26 @@
+#V2
+echo "hello world"
+ls
+cat history.txt
+echo "hello world" >> file.txt
+cat file.txt
+hahah how are you doing?
+f
+cat history.txt
+andrei
+type git ls vim
+bind -p
+stty -a
+infocmp
+cat history.txt
+echo "hello world" "how are you my frined"
+echo "haksdjfkadsasdkjfasdf
+echo asdjfkjasdkf asdjkf kads
+type git vim >> file.txt
+ls >> file.txt
+cat file.txt
+rm file.txt
+ls
+rm hasdhfkn
+rm hasdhfkh
+ls

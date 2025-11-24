@@ -1,3 +1,2 @@
-cat: hehe: No such file or directory
-cat: akdjfkadjsfk: No such file or directory
-cat: kukukuk: No such file or directory
+cat: lalkdf: No such file or directory
+cat: qwkejrkq: No such file or directory

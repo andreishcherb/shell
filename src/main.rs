@@ -25,7 +25,7 @@ struct ParseRedirectError;
 impl FromStr for Redirect {
     type Err = ParseRedirectError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
             ">" | "1>" => Ok(Self::OutputRedir),
             "2>" => Ok(Self::ErrRedir),
@@ -43,7 +43,7 @@ struct ParseCommandError;
 impl FromStr for Command {
     type Err = ParseCommandError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
         match s {
             "exit" => Ok(Self::Exit),
             "echo" => Ok(Self::Echo),
@@ -71,39 +71,57 @@ impl fmt::Display for Command {
 }
 
 use regex::Regex;
+use rustyline::error::ReadlineError;
+use rustyline::{DefaultEditor, Result};
 use std::fs::File;
 use std::fs::OpenOptions;
 
-fn main() -> std::io::Result<()> {
+fn main() -> Result<()> {
+    // `()` can be used when no completer is required
+    let mut rl = DefaultEditor::new()?;
+    if rl.load_history("history.txt").is_err() {
+        println!("No previous history.");
+    }
     loop {
-        print!("$ ");
-        io::stdout().flush()?;
+        let readline = rl.readline("$ ");
+        match readline {
+            Ok(input) => {
+                rl.add_history_entry(input.as_str())?;
+                let input = input.trim().replace("''", "").replace("\"\"", "");
+                if input.is_empty() {
+                    continue;
+                }
 
-        let mut input = String::new();
+                let re = Regex::new(r#"("[/'\w\s\\:]+"|'[^']+'|[~/\.\-\w\\\d>]+)"#).unwrap();
+                let mut args = vec![];
+                for (_, [arg]) in re.captures_iter(&input).map(|c| c.extract()) {
+                    let x: &[_] = &['\'', '"'];
+                    let arg = arg.trim_matches(x);
+                    args.push(arg);
+                }
 
-        io::stdin()
-            .read_line(&mut input)
-            .expect("Failed to read line");
+                println!("args:{:?}", args);
 
-        let input = input.trim().replace("''", "").replace("\"\"", "");
-        if input.is_empty() {
-            continue;
-        }
-
-        let re = Regex::new(r#"("[/'\w\s\\:]+"|'[^']+'|[~/\.\-\w\\\d>]+)"#).unwrap();
-        let mut args = vec![];
-        for (_, [arg]) in re.captures_iter(&input).map(|c| c.extract()) {
-            let x: &[_] = &['\'', '"'];
-            let arg = arg.trim_matches(x);
-            args.push(arg);
-        }
-
-        // println!("args:{:?}", args);
-        let redirection = redirection(args.clone());
-        if let Err(err) = handle_command(args, redirection) {
-            println!("here is error {}", err);
+                if let Err(err) = execution(&args) {
+                    println!("Error: {:?}", err);
+                }
+            }
+            Err(ReadlineError::Interrupted) => {
+                println!("CTRL-C");
+                break;
+            }
+            Err(ReadlineError::Eof) => {
+                println!("CTRL-D");
+                break;
+            }
+            Err(err) => {
+                println!("Error: {:?}", err);
+                break;
+            }
         }
     }
+    let _ = rl.save_history("history.txt");
+    Ok(())
 }
 
 use std::env;
@@ -141,73 +159,72 @@ fn search_executable_file(filename: &str, key: &str) -> Option<PathBuf> {
     }
 }
 
-fn redirection(args: Vec<&str>) -> Option<(Redirect, String, usize)> {
+fn redirection( args: &Vec<&str>,) -> std::result::Result<Option<(Redirect, String, usize)>, ParseRedirectError> {
     for (i, arg) in args.iter().enumerate() {
         let redir = arg.parse::<Redirect>();
         if let Ok(redir) = redir {
             if i != args.len() - 1 {
-                return Some((redir, String::from(args[i + 1]), i));
+                return Ok(Some((redir, String::from(args[i + 1]), i)));
             } else {
-                println!("need filename");
+                return Err::<Option<(Redirect, String, usize)>, ParseRedirectError>(ParseRedirectError);
             }
         }
     }
-
-    None
+    Ok(None)
 }
 
-fn handle_command(
-    args: Vec<&str>,
-    redir: Option<(Redirect, String, usize)>,
-) -> Result<(), io::Error> {
+fn execution(args: &Vec<&str>) -> Result<()> {
     let cmd = args[0].parse::<Command>();
     match cmd {
         Ok(cmd) => match cmd {
             Command::Exit => std::process::exit(0),
-            Command::Echo => match redir {
-                Some((redir, file_name, i)) => {
-                    let mut file;
-                    match redir {
-                        Redirect::OutputRedir | Redirect::ErrRedir => {
-                            file = File::create(file_name)?
+            Command::Echo => match redirection(args) {
+                Ok(val) => match val {
+                    Some((redir, file_name, i)) => {
+                        let mut file;
+                        match redir {
+                            Redirect::OutputRedir | Redirect::ErrRedir => {
+                                file = File::create(file_name)?
+                            }
+                            Redirect::OutputAppend | Redirect::ErrAppend => {
+                                file = OpenOptions::new()
+                                    .append(true)
+                                    .write(true)
+                                    .create(true)
+                                    .open(file_name)?
+                            }
                         }
-                        Redirect::OutputAppend | Redirect::ErrAppend => {
-                            file = OpenOptions::new()
-                                .append(true)
-                                .write(true)
-                                .create(true)
-                                .open(file_name)?
-                        }
-                    }
-                    let mut index = 1;
+                        let mut index = 1;
 
-                    while index < i {
+                        while index < i {
+                            if let Redirect::OutputRedir | Redirect::OutputAppend = redir {
+                                file.write_all(args[index].as_bytes())?;
+                                file.write_all(b" ")?;
+                            } else {
+                                io::stdout().write_all(args[index].as_bytes())?;
+                                io::stdout().write_all(b" ")?;
+                            }
+                            index += 1;
+                        }
                         if let Redirect::OutputRedir | Redirect::OutputAppend = redir {
-                            file.write_all(args[index].as_bytes())?;
-                            file.write_all(b" ")?;
+                            file.write_all(b"\n")?;
                         } else {
-                            io::stdout().write_all(args[index].as_bytes())?;
-                            io::stdout().write_all(b" ")?;
+                            io::stdout().write_all(b"\n")?;
                         }
-                        index += 1;
                     }
-                    if let Redirect::OutputRedir | Redirect::OutputAppend = redir {
-                        file.write_all(b"\n")?;
-                    } else {
-                        io::stdout().write_all(b"\n")?;
-                    }
-                }
-                None => {
-                    let mut index = 1;
-                    while index < args.len() {
-                        print!("{}", args[index]);
-                        if index != args.len() - 1 {
-                            print!(" ")
+                    None => {
+                        let mut index = 1;
+                        while index < args.len() {
+                            print!("{}", args[index]);
+                            if index != args.len() - 1 {
+                                print!(" ")
+                            }
+                            index += 1;
                         }
-                        index += 1;
+                        println!();
                     }
-                    println!();
-                }
+                },
+                Err(_) => println!("missing filename"),
             },
             Command::Pwd => {
                 println!("{}", env::current_dir()?.display());
@@ -236,49 +253,54 @@ fn handle_command(
             }
         },
         Err(_) => match search_executable_file(args[0], "PATH") {
-            Some(path) => match redir {
-                Some((redir, file_name, i)) => {
-                    let mut cmd =
-                        std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
-                    let mut file;
-                    match redir {
-                        Redirect::OutputRedir | Redirect::ErrRedir => {
-                            file = File::create(file_name)?
+            Some(path) => match redirection(args) {
+                Ok(val) => match val {
+                    Some((redir, file_name, i)) => {
+                        let mut cmd = std::process::Command::new(
+                            path.file_name().unwrap_or(path.as_os_str()),
+                        );
+                        let mut file;
+                        match redir {
+                            Redirect::OutputRedir | Redirect::ErrRedir => {
+                                file = File::create(file_name)?
+                            }
+                            Redirect::OutputAppend | Redirect::ErrAppend => {
+                                file = OpenOptions::new()
+                                    .append(true)
+                                    .write(true)
+                                    .create(true)
+                                    .open(file_name)?
+                            }
                         }
-                        Redirect::OutputAppend | Redirect::ErrAppend => {
-                            file = OpenOptions::new()
-                                .append(true)
-                                .write(true)
-                                .create(true)
-                                .open(file_name)?
+                        let mut index = 1;
+                        while index < i {
+                            cmd.arg(args[index]);
+                            index += 1;
+                        }
+                        let output = cmd.output()?;
+                        if let Redirect::OutputRedir | Redirect::OutputAppend = redir {
+                            file.write_all(&output.stdout)?;
+                            io::stderr().write_all(&output.stderr)?;
+                        } else {
+                            io::stdout().write_all(&output.stdout)?;
+                            file.write_all(&output.stderr)?;
                         }
                     }
-                    let mut index = 1;
-                    while index < i {
-                        cmd.arg(args[index]);
-                        index += 1;
-                    }
-                    let output = cmd.output()?;
-                    if let Redirect::OutputRedir | Redirect::OutputAppend = redir {
-                        file.write_all(&output.stdout)?;
-                        io::stderr().write_all(&output.stderr)?;
-                    } else {
+                    None => {
+                        let mut cmd = std::process::Command::new(
+                            path.file_name().unwrap_or(path.as_os_str()),
+                        );
+                        let mut index = 1;
+                        while index < args.len() {
+                            cmd.arg(args[index]);
+                            index += 1;
+                        }
+                        let output = cmd.output()?;
                         io::stdout().write_all(&output.stdout)?;
-                        file.write_all(&output.stderr)?;
+                        io::stderr().write_all(&output.stderr)?;
                     }
-                }
-                None => {
-                    let mut cmd =
-                        std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
-                    let mut index = 1;
-                    while index < args.len() {
-                        cmd.arg(args[index]);
-                        index += 1;
-                    }
-                    let output = cmd.output()?;
-                    io::stdout().write_all(&output.stdout)?;
-                    io::stderr().write_all(&output.stderr)?;
-                }
+                },
+                Err(_) => println!("missing file name"),
             },
             None => println!("{}: not found", args[0]),
         },

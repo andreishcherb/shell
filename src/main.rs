@@ -151,7 +151,7 @@ fn main() -> Result<()> {
     // The type parameter <H: Helper> is set to `MyHelper`.
     let mut rl: Editor<MyHelper, DefaultHistory> = Editor::new()?;
     rl.set_helper(Some(helper));
-    rl.set_completion_type(CompletionType::Circular);
+    rl.set_completion_type(CompletionType::List);
 
     if rl.load_history("history.txt").is_err() {
         println!("No previous history.");

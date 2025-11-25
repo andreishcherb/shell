@@ -71,18 +71,18 @@ impl fmt::Display for Command {
 }
 
 use regex::Regex;
-use rustyline::error::ReadlineError;
-use rustyline::Result;
-use std::fs::File;
-use std::fs::OpenOptions;
 use rustyline::completion::{Completer, Pair};
-use rustyline::{Editor, Context};
-use rustyline::Helper;
-use rustyline::validate::Validator;
+use rustyline::config::{CompletionType, Configurer};
+use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
 use rustyline::history::DefaultHistory;
-
+use rustyline::validate::Validator;
+use rustyline::Helper;
+use rustyline::Result;
+use rustyline::{Context, Editor};
+use std::fs::File;
+use std::fs::OpenOptions;
 
 struct MyHelper {
     commands: Vec<String>,
@@ -91,13 +91,22 @@ struct MyHelper {
 impl Completer for MyHelper {
     type Candidate = Pair;
 
-    fn complete(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> std::result::Result<(usize, Vec<Pair>), ReadlineError> {
+    fn complete(
+        &self,
+        line: &str,
+        pos: usize,
+        _ctx: &Context<'_>,
+    ) -> std::result::Result<(usize, Vec<Pair>), ReadlineError> {
         // Find the start of the current word
-        let start = line[..pos].rfind(|c: char| c.is_whitespace() || c == '(' || c == ')').map_or(0, |i| i + 1);
+        let start = line[..pos]
+            .rfind(|c: char| c.is_whitespace() || c == '(' || c == ')')
+            .map_or(0, |i| i + 1);
         let word = &line[start..pos];
 
         // Filter commands that start with the current word
-        let candidates: Vec<Pair> = self.commands.iter()
+        let candidates: Vec<Pair> = self
+            .commands
+            .iter()
             .filter(|cmd| cmd.starts_with(word))
             .map(|cmd| Pair {
                 display: cmd.clone(),
@@ -111,7 +120,6 @@ impl Completer for MyHelper {
 
 impl Helper for MyHelper {}
 impl Hinter for MyHelper {
-
     type Hint = String;
 
     fn hint(&self, _line: &str, _pos: usize, _ctx: &rustyline::Context<'_>) -> Option<String> {
@@ -119,22 +127,38 @@ impl Hinter for MyHelper {
         None
     }
 }
-impl Highlighter for MyHelper { fn highlight<'l>(&self, line: &'l str, _history_index: usize) -> std::borrow::Cow<'l, str> { std::borrow::Cow::Borrowed(line) } }
-impl Validator for MyHelper { fn validate(&self, _ctx: &mut rustyline::validate::ValidationContext) -> rustyline::Result<rustyline::validate::ValidationResult> { Ok(rustyline::validate::ValidationResult::Valid(None)) } }
+impl Highlighter for MyHelper {
+    fn highlight<'l>(&self, line: &'l str, _history_index: usize) -> std::borrow::Cow<'l, str> {
+        std::borrow::Cow::Borrowed(line)
+    }
+}
+
+impl Validator for MyHelper {
+    fn validate(
+        &self,
+        _ctx: &mut rustyline::validate::ValidationContext,
+    ) -> rustyline::Result<rustyline::validate::ValidationResult> {
+        Ok(rustyline::validate::ValidationResult::Valid(None))
+    }
+}
 
 fn main() -> Result<()> {
-    // `()` can be used when no completer is required
-    let commands = vec!["echo ".to_string(), "exit ".to_string()];
+    let mut commands = vec!["echo ".to_string(), "exit ".to_string()];
+    add_executable_files("PATH", &mut commands);
     let helper = MyHelper { commands };
 
     // `Editor` can use any struct that implements the `Helper` trait.
     // The type parameter <H: Helper> is set to `MyHelper`.
     let mut rl: Editor<MyHelper, DefaultHistory> = Editor::new()?;
     rl.set_helper(Some(helper));
+    rl.set_completion_type(CompletionType::Circular);
 
     if rl.load_history("history.txt").is_err() {
         println!("No previous history.");
     }
+
+    let re = Regex::new(r#"("[/'\w\s\\:]+"|'[^']+'|[~/\.\-\w\\\d>]+)"#).unwrap();
+
     loop {
         let readline = rl.readline("$ ");
         match readline {
@@ -145,7 +169,6 @@ fn main() -> Result<()> {
                     continue;
                 }
 
-                let re = Regex::new(r#"("[/'\w\s\\:]+"|'[^']+'|[~/\.\-\w\\\d>]+)"#).unwrap();
                 let mut args = vec![];
                 for (_, [arg]) in re.captures_iter(&input).map(|c| c.extract()) {
                     let x: &[_] = &['\'', '"'];
@@ -212,14 +235,18 @@ fn search_executable_file(filename: &str, key: &str) -> Option<PathBuf> {
     }
 }
 
-fn redirection( args: &Vec<&str>,) -> std::result::Result<Option<(Redirect, String, usize)>, ParseRedirectError> {
+fn redirection(
+    args: &Vec<&str>,
+) -> std::result::Result<Option<(Redirect, String, usize)>, ParseRedirectError> {
     for (i, arg) in args.iter().enumerate() {
         let redir = arg.parse::<Redirect>();
         if let Ok(redir) = redir {
             if i != args.len() - 1 {
                 return Ok(Some((redir, String::from(args[i + 1]), i)));
             } else {
-                return Err::<Option<(Redirect, String, usize)>, ParseRedirectError>(ParseRedirectError);
+                return Err::<Option<(Redirect, String, usize)>, ParseRedirectError>(
+                    ParseRedirectError,
+                );
             }
         }
     }
@@ -360,4 +387,39 @@ fn execution(args: &Vec<&str>) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn add_executable_files(key: &str, commands: &mut Vec<String>) {
+    match env::var(key) {
+        Ok(val) => {
+            let dirs: Vec<&str> = val.split(':').collect();
+            for dir in dirs {
+                if let Ok(entries) = fs::read_dir(dir) {
+                    for entry in entries {
+                        if let Ok(entry) = entry {
+                            if let Ok(file_type) = entry.file_type() {
+                                if file_type.is_file() {
+                                    if let Ok(metadata) = entry.metadata() {
+                                        if metadata.permissions().mode() & 0o100 != 0 {
+                                            match entry.file_name().into_string() {
+                                            Ok(mut filename) => {
+                                                    filename.push(' ');
+                                                    commands.push(filename);
+                                                }
+                                            Err(os_string) => println!("couldn't convert {:?} to String", os_string)
+                                            }
+                                            
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            println!("{key} not found: {e}");
+        }
+    }
 }

@@ -543,7 +543,8 @@ fn add_executable_files(key: &str, commands: &mut Trie) {
                                     if let Ok(metadata) = entry.metadata() {
                                         if metadata.permissions().mode() & 0o100 != 0 {
                                             match entry.file_name().into_string() {
-                                                Ok(filename) => {
+                                                Ok(mut filename) => {
+                                                    filename.push(' ');
                                                     commands.insert(filename.as_str());
                                                 }
                                                 Err(os_string) => println!(

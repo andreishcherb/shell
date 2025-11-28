@@ -236,7 +236,7 @@ impl Completer for MyHelper {
             .map_or(0, |i| i + 1);
         let word = &line[start..pos];
 
-        let candidates: Vec<Pair> = self
+        let mut candidates: Vec<Pair> = self
             .commands
             .search(word)
             .iter()
@@ -245,6 +245,10 @@ impl Completer for MyHelper {
                 replacement: cmd.clone(),
             })
             .collect();
+
+        if candidates.len() == 1 {
+            candidates[0].replacement.push(' ');
+        }
 
         Ok((start, candidates))
     }

@@ -288,7 +288,7 @@ fn main() -> Result<()> {
     // `Editor` can use any struct that implements the `Helper` trait.
     // The type parameter <H: Helper> is set to `MyHelper`.
     let config = Config::builder()
-        .tab_stop(2)
+        .tab_stop(8)
         .completion_type(CompletionType::List)
         .build();
     let mut rl: Editor<MyHelper, DefaultHistory> = Editor::with_config(config)?;

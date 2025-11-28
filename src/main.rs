@@ -288,7 +288,7 @@ fn main() -> Result<()> {
     // `Editor` can use any struct that implements the `Helper` trait.
     // The type parameter <H: Helper> is set to `MyHelper`.
     let config = Config::builder()
-        .tab_stop(8)
+        .tab_stop(2)
         .completion_type(CompletionType::List)
         .build();
     let mut rl: Editor<MyHelper, DefaultHistory> = Editor::with_config(config)?;
@@ -543,8 +543,7 @@ fn add_executable_files(key: &str, commands: &mut Trie) {
                                     if let Ok(metadata) = entry.metadata() {
                                         if metadata.permissions().mode() & 0o100 != 0 {
                                             match entry.file_name().into_string() {
-                                                Ok(mut filename) => {
-                                                    filename.push(' ');
+                                                Ok(filename) => {
                                                     commands.insert(filename.as_str());
                                                 }
                                                 Err(os_string) => println!(

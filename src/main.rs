@@ -72,7 +72,7 @@ impl fmt::Display for Command {
 
 use regex::Regex;
 use rustyline::completion::{Completer, Pair};
-use rustyline::config::{CompletionType, Configurer};
+use rustyline::config::{CompletionType, Config};
 use rustyline::error::ReadlineError;
 use rustyline::highlight::Highlighter;
 use rustyline::hint::Hinter;
@@ -81,11 +81,144 @@ use rustyline::validate::Validator;
 use rustyline::Helper;
 use rustyline::Result;
 use rustyline::{Context, Editor};
+use std::collections::VecDeque;
+use std::fmt::Display;
 use std::fs::File;
 use std::fs::OpenOptions;
 
+#[derive(Default)]
+pub struct Node {
+    pub children: Vec<Node>,
+    pub key: Option<char>,
+    pub value: Option<String>,
+    pub count: usize,
+}
+
+impl Node {
+    pub fn new() -> Self {
+        Node {
+            ..Default::default()
+        }
+    }
+
+    pub fn with_key(c: char) -> Self {
+        Node {
+            key: Some(c),
+            ..Default::default()
+        }
+    }
+}
+
+pub struct Trie {
+    pub root: Node,
+}
+
+impl Trie {
+    pub fn new() -> Self {
+        Trie { root: Node::new() }
+    }
+
+    pub fn insert(&mut self, s: &str) {
+        let mut cur = &mut self.root;
+        for c in s.chars() {
+            match cur.children.binary_search_by(|f| f.key.cmp(&Some(c))) {
+                Ok(i) => {
+                    cur = &mut cur.children[i];
+                }
+                Err(i) => {
+                    cur.children.insert(i, Node::with_key(c));
+                    cur = &mut cur.children[i];
+                }
+            }
+        }
+
+        cur.count += 1;
+        cur.value.replace(s.to_string());
+    }
+    pub fn exists(&self, s: &str) -> bool {
+        let mut cur = &self.root;
+        for c in s.chars() {
+            match cur.children.binary_search_by(|f| f.key.cmp(&Some(c))) {
+                Ok(i) => {
+                    cur = &cur.children[i];
+                }
+                Err(_) => {
+                    return false;
+                }
+            }
+        }
+
+        cur.count > 0
+    }
+    pub fn search(&self, s: &str) -> Vec<String> {
+        let mut cur = &self.root;
+        for c in s.chars() {
+            match cur.children.binary_search_by(|f| f.key.cmp(&Some(c))) {
+                Ok(i) => {
+                    cur = &cur.children[i];
+                }
+                Err(_) => {
+                    return Vec::new();
+                }
+            }
+        }
+
+        let mut results = Vec::new();
+        let mut q = Vec::new();
+        q.push(cur);
+        while let Some(c) = q.pop() {
+            for child in c.children.iter() {
+                q.push(&child);
+            }
+
+            if c.count > 0 {
+                let value = c.value.as_ref().unwrap();
+                let count = c.count;
+                results.push((count, value));
+            }
+        }
+
+        results.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(b.1)));
+        results.iter().map(|m| m.1.clone()).collect()
+    }
+}
+
+impl Display for Trie {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut q: VecDeque<&Node> = VecDeque::new();
+        let root = &self.root;
+        q.push_back(root);
+
+        while !q.is_empty() {
+            for _ in 0..q.len() {
+                if let Some(node) = q.pop_front() {
+                    for c in node.children.iter() {
+                        let r = write!(f, "{} ", &c.key.unwrap());
+                        if r.is_err() {
+                            return r;
+                        }
+
+                        if c.children.len() > 0 {
+                            q.push_back(&c);
+                        }
+                    }
+                }
+            }
+
+            if q.len() > 0 {
+                let r = writeln!(f);
+                if r.is_err() {
+                    return r;
+                }
+            }
+
+        }
+        Ok(())
+    }
+}
+
 struct MyHelper {
-    commands: Vec<String>,
+    commands: Trie
 }
 
 impl Completer for MyHelper {
@@ -103,11 +236,10 @@ impl Completer for MyHelper {
             .map_or(0, |i| i + 1);
         let word = &line[start..pos];
 
-        // Filter commands that start with the current word
         let candidates: Vec<Pair> = self
             .commands
+            .search(word)
             .iter()
-            .filter(|cmd| cmd.starts_with(word))
             .map(|cmd| Pair {
                 display: cmd.clone(),
                 replacement: cmd.clone(),
@@ -143,15 +275,24 @@ impl Validator for MyHelper {
 }
 
 fn main() -> Result<()> {
-    let mut commands = vec!["echo ".to_string(), "exit ".to_string()];
+    let mut commands = Trie::new();
+    commands.insert("exit");
+    commands.insert("echo");
+    commands.insert("type");
+    commands.insert("pwd");
+    commands.insert("cd");
     add_executable_files("PATH", &mut commands);
+    // println!("{}", commands);
     let helper = MyHelper { commands };
 
     // `Editor` can use any struct that implements the `Helper` trait.
     // The type parameter <H: Helper> is set to `MyHelper`.
-    let mut rl: Editor<MyHelper, DefaultHistory> = Editor::new()?;
+    let config = Config::builder()
+        .tab_stop(2)
+        .completion_type(CompletionType::List)
+        .build();
+    let mut rl: Editor<MyHelper, DefaultHistory> = Editor::with_config(config)?;
     rl.set_helper(Some(helper));
-    rl.set_completion_type(CompletionType::List);
 
     if rl.load_history("history.txt").is_err() {
         println!("No previous history.");
@@ -389,7 +530,7 @@ fn execution(args: &Vec<&str>) -> Result<()> {
     Ok(())
 }
 
-fn add_executable_files(key: &str, commands: &mut Vec<String>) {
+fn add_executable_files(key: &str, commands: &mut Trie) {
     match env::var(key) {
         Ok(val) => {
             let dirs: Vec<&str> = val.split(':').collect();
@@ -402,13 +543,14 @@ fn add_executable_files(key: &str, commands: &mut Vec<String>) {
                                     if let Ok(metadata) = entry.metadata() {
                                         if metadata.permissions().mode() & 0o100 != 0 {
                                             match entry.file_name().into_string() {
-                                            Ok(mut filename) => {
-                                                    filename.push(' ');
-                                                    commands.push(filename);
+                                                Ok(filename) => {
+                                                    commands.insert(filename.as_str());
                                                 }
-                                            Err(os_string) => println!("couldn't convert {:?} to String", os_string)
+                                                Err(os_string) => println!(
+                                                    "couldn't convert {:?} to String",
+                                                    os_string
+                                                ),
                                             }
-                                            
                                         }
                                     }
                                 }

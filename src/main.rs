@@ -518,17 +518,11 @@ fn execution(args: &Vec<&str>) -> Result<()> {
                     }
                     //without redirection
                     None => {
-                        let mut cmd = std::process::Command::new(
-                            path.file_name().unwrap_or(path.as_os_str()),
-                        );
-                        let mut index = 1;
-                        while index < args.len() {
-                            cmd.arg(args[index]);
-                            index += 1;
-                        }
-                        let output = cmd.output()?;
-                        io::stdout().write_all(&output.stdout)?;
-                        io::stderr().write_all(&output.stderr)?;
+                        let mut cmd = std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
+                        cmd.args(&args[1..args.len()]);
+                        let mut child = cmd.spawn().expect("fail spawn a child");
+                        child.wait().expect("command wasn't running");
+                        println!("Child has finished its execution!");
                     }
                 },
                 Err(_) => println!("missing file name"),

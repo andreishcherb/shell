@@ -300,7 +300,7 @@ fn main() -> Result<()> {
     rl.set_helper(Some(helper));
 
     if rl.load_history("history.txt").is_err() {
-        println!("No previous history.");
+        //println!("No previous history.");
     }
 
     let re = Regex::new(r#"("[/'\w\s\\:]+"|'[^']+'|[~/\.\-\w\\\d>|]+)"#).unwrap();

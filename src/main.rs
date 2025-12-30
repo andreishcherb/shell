@@ -598,6 +598,7 @@ fn dual_command_pipeline(args: &Vec<&str>) -> Result<()> {
                             .expect("Failed to spawn child process");
                     let count_str = String::from_utf8(output.stdout)
                         .expect("Not valid UTF-8")
+                        .trim_end()
                         .to_string();
                     println!("{}", count_str);
                 }

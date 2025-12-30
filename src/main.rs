@@ -518,11 +518,12 @@ fn execution(args: &Vec<&str>) -> Result<()> {
                     }
                     //without redirection
                     None => {
-                        let mut cmd = std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()));
+                        let mut cmd = std::process::Command::new(
+                            path.file_name().unwrap_or(path.as_os_str()),
+                        );
                         cmd.args(&args[1..args.len()]);
                         let mut child = cmd.spawn().expect("fail spawn a child");
                         child.wait().expect("command wasn't running");
-                        println!("Child has finished its execution!");
                     }
                 },
                 Err(_) => println!("missing file name"),
@@ -573,27 +574,37 @@ fn add_executable_files(key: &str, commands: &mut Trie) {
 use std::process::Stdio;
 
 fn dual_command_pipeline(args: &Vec<&str>) -> Result<()> {
-    let index = args.iter().position(|str| *str == "|").expect("should be in vector"); 
+    let index = args
+        .iter()
+        .position(|str| *str == "|")
+        .expect("should be in vector");
     match search_executable_file(args[0], "PATH") {
         Some(path) => {
-            let mut child = std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()))
-                .stdout(Stdio::piped())
-                .args(&args[1..index])
-                .spawn()
-                .expect("Failed to spawn child process");
+            let mut first_child =
+                std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()))
+                    .stdout(Stdio::piped())
+                    .args(&args[1..index])
+                    .spawn()
+                    .expect("Failed to spawn child process");
 
-            match search_executable_file(args[index+1], "PATH") {
+            match search_executable_file(args[index + 1], "PATH") {
                 Some(path) => {
-                    let output =
+                    let second_child =
                         std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()))
-                            .stdin(child.stdout.take().expect("handle present")) 
-                            .args(&args[index+2..args.len()])
-                            .output()
+                            .stdin(first_child.stdout.take().expect("handle present"))
+                            .stdout(Stdio::piped())
+                            .args(&args[index + 2..args.len()])
+                            .spawn()
                             .expect("Failed to spawn child process");
+
+                    let output = second_child.wait_with_output()?;
+                    first_child.wait()?;
+
                     let count_str = String::from_utf8(output.stdout)
                         .expect("Not valid UTF-8")
                         .trim_end()
                         .to_string();
+
                     println!("{}", count_str);
                 }
                 None => println!("{}: not found", args[2]),

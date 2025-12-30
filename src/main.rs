@@ -589,23 +589,22 @@ fn dual_command_pipeline(args: &Vec<&str>) -> Result<()> {
 
             match search_executable_file(args[index + 1], "PATH") {
                 Some(path) => {
-                    let second_child =
+                    let mut second_child =
                         std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()))
                             .stdin(first_child.stdout.take().expect("handle present"))
-                            .stdout(Stdio::piped())
                             .args(&args[index + 2..args.len()])
                             .spawn()
                             .expect("Failed to spawn child process");
 
-                    let output = second_child.wait_with_output()?;
-                    //first_child.wait()?;
+                    second_child.wait()?;
+                    first_child.wait()?;
 
-                    let count_str = String::from_utf8(output.stdout)
-                        .expect("Not valid UTF-8")
-                        .trim_end()
-                        .to_string();
-
-                    println!("{}", count_str);
+                    // let count_str = String::from_utf8(output.stdout)
+                    //     .expect("Not valid UTF-8")
+                    //     .trim_end()
+                    //     .to_string();
+                    //
+                    // println!("{}", count_str);
                 }
                 None => println!("{}: not found", args[2]),
             }

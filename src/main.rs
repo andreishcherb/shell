@@ -135,6 +135,7 @@ impl Trie {
         cur.count += 1;
         cur.value.replace(s.to_string());
     }
+
     pub fn exists(&self, s: &str) -> bool {
         let mut cur = &self.root;
         for c in s.chars() {
@@ -150,6 +151,7 @@ impl Trie {
 
         cur.count > 0
     }
+
     pub fn search(&self, s: &str) -> Vec<String> {
         let mut cur = &self.root;
         for c in s.chars() {
@@ -211,14 +213,13 @@ impl Display for Trie {
                     return r;
                 }
             }
-
         }
         Ok(())
     }
 }
 
 struct MyHelper {
-    commands: Trie
+    commands: Trie,
 }
 
 impl Completer for MyHelper {
@@ -302,7 +303,7 @@ fn main() -> Result<()> {
         println!("No previous history.");
     }
 
-    let re = Regex::new(r#"("[/'\w\s\\:]+"|'[^']+'|[~/\.\-\w\\\d>]+)"#).unwrap();
+    let re = Regex::new(r#"("[/'\w\s\\:]+"|'[^']+'|[~/\.\-\w\\\d>|]+)"#).unwrap();
 
     loop {
         let readline = rl.readline("$ ");
@@ -321,7 +322,7 @@ fn main() -> Result<()> {
                     args.push(arg);
                 }
 
-                // println!("args:{:?}", args);
+                println!("args:{:?}", args);
 
                 if let Err(err) = execution(&args) {
                     println!("Error: {:?}", err);
@@ -399,6 +400,9 @@ fn redirection(
 }
 
 fn execution(args: &Vec<&str>) -> Result<()> {
+    if args.contains(&"|") {
+        return dual_command_pipeline(args);
+    }
     let cmd = args[0].parse::<Command>();
     match cmd {
         Ok(cmd) => match cmd {
@@ -480,6 +484,7 @@ fn execution(args: &Vec<&str>) -> Result<()> {
         Err(_) => match search_executable_file(args[0], "PATH") {
             Some(path) => match redirection(args) {
                 Ok(val) => match val {
+                    //need redirection
                     Some((redir, file_name, i)) => {
                         let mut cmd = std::process::Command::new(
                             path.file_name().unwrap_or(path.as_os_str()),
@@ -511,6 +516,7 @@ fn execution(args: &Vec<&str>) -> Result<()> {
                             file.write_all(&output.stderr)?;
                         }
                     }
+                    //without redirection
                     None => {
                         let mut cmd = std::process::Command::new(
                             path.file_name().unwrap_or(path.as_os_str()),
@@ -568,4 +574,38 @@ fn add_executable_files(key: &str, commands: &mut Trie) {
             println!("{key} not found: {e}");
         }
     }
+}
+
+use std::process::Stdio;
+
+fn dual_command_pipeline(args: &Vec<&str>) -> Result<()> {
+    let index = args.iter().position(|str| *str == "|").expect("should be in vector"); 
+    match search_executable_file(args[0], "PATH") {
+        Some(path) => {
+            let mut child = std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()))
+                .stdout(Stdio::piped())
+                .args(&args[1..index])
+                .spawn()
+                .expect("Failed to spawn child process");
+
+            match search_executable_file(args[index+1], "PATH") {
+                Some(path) => {
+                    let output =
+                        std::process::Command::new(path.file_name().unwrap_or(path.as_os_str()))
+                            .stdin(child.stdout.take().expect("handle present")) 
+                            .args(&args[index+2..args.len()])
+                            .output()
+                            .expect("Failed to spawn child process");
+                    let count_str = String::from_utf8(output.stdout)
+                        .expect("Not valid UTF-8")
+                        .to_string();
+                    println!("{}", count_str);
+                }
+                None => println!("{}: not found", args[2]),
+            }
+        }
+        None => println!("{}: not found", args[0]),
+    }
+
+    Ok(())
 }
